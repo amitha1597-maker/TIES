@@ -146,6 +146,9 @@ table.matrix{width:100%;border-collapse:collapse;font-size:14px;min-width:460px}
 .fbbtns button.clean{border-color:rgba(76,195,138,.5)}
 .fbbtns button.confirmed,.fbbtns button.contact{border-color:rgba(239,91,76,.5)}
 .fbbtns button.on{outline:2px solid var(--accent)}
+.sim{display:flex;gap:12px;align-items:center;padding:10px 12px;border-radius:10px;background:var(--panel2);border:1px solid var(--line)}
+.sim .grow{flex:1;min-width:0}
+.footlogo{width:34px;height:38px;flex:none;fill:var(--accent)}
 .trust{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;border-radius:10px;background:var(--panel2)}
 .log{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:13px}
 .log li{display:flex;justify-content:space-between;gap:10px;padding:6px 10px;background:var(--panel2);border-radius:8px}
@@ -463,8 +466,11 @@ function recommendation(){
 /* ===================== MAP ===================== */
 const svg=document.getElementById('map');
 function latestStatus(tid){for(let i=P.reports.length-1;i>=0;i--){const r=P.reports[i];if(r.th===tid&&!r.demo)return r.st}return null}
+// one footprint (left foot) pointing up (-y), centred on 0,0; mirrored with scale(-1,1) for the right foot
+const FOOT=`<ellipse cx="0" cy="1.6" rx="2.5" ry="4"/><circle cx="1.7" cy="-3.5" r="1.1"/><circle cx=".3" cy="-4.4" r=".9"/><circle cx="-1" cy="-4.1" r=".8"/><circle cx="-2" cy="-3.2" r=".7"/>`;
 function renderMap(){
-  let h=`<rect x="0" y="0" width="600" height="420" fill="#0f1513"/>`;
+  let h=`<defs><g id="foot" fill="#f4f7ea" stroke="#0c110f" stroke-width=".35">${FOOT}</g></defs>`;
+  h+=`<rect x="0" y="0" width="600" height="420" fill="#0f1513"/>`;
   // building blocks
   const ys=[[16,ROWS[0]-14],[ROWS[0]+14,ROWS[1]-16],[ROWS[1]+16,ROWS[2]-14],[ROWS[2]+14,404]];
   ys.forEach(([y1,y2])=>{for(let c=0;c<5;c++){const x1=COLS[c+1]+12,x2=COLS[c]-12;h+=`<rect x="${x1}" y="${y1}" width="${x2-x1}" height="${y2-y1}" rx="4" fill="#18201c" stroke="#222c27"/>`}});
@@ -489,6 +495,8 @@ function renderMap(){
       h+=`<g><circle cx="${mid.x}" cy="${mid.y+(i?-5:5)}" r="11" fill="${i?'#c08cff':'#5aa9ff'}"/><text x="${mid.x}" y="${mid.y+(i?-5:5)+4}" font-size="12" font-weight="700" text-anchor="middle" fill="#0c110f">${RL[i]}</text></g>`;
     });
   }
+  // footprint walk layer: filled by drawWalk(), which also runs every animation frame
+  h+=`<g id="walk" pointer-events="none"></g>`;
   // windows + threats
   if(S.step>=2){
     const cov=S.routes&&S.routes[S.sel]?new Set(coveredWindows(S.routes[S.sel].eset)):new Set();
@@ -515,7 +523,54 @@ function renderMap(){
   svg.innerHTML=h;
   const d=S.routes&&S.routes[S.sel]?`${S.routes[S.sel].len} מ׳ · ${rName(S.sel)}`:`קו אווירי ${airDist()} מ׳`;
   document.getElementById('mapnote').textContent=d;
+  drawWalk();
 }
+
+/* ===================== WALK SIMULATION ===================== */
+// footprints every STEP_GAP map units along the drawn route line, alternating left/right
+const STEP_GAP=20, STEP_SIDE=6, FOOT_SCALE=2.3;
+function walkSteps(r,i){
+  const pts=r.nodes.map(n=>({x:nodes[n].x,y:nodes[n].y+(i?-5:5)}));
+  const out=[];let carry=STEP_GAP/2,k=0;
+  for(let s=0;s<pts.length-1;s++){
+    const A=pts[s],B=pts[s+1],dx=B.x-A.x,dy=B.y-A.y,len=Math.hypot(dx,dy);
+    const ux=dx/len,uy=dy/len,a=Math.atan2(dy,dx)*180/Math.PI+90;
+    let d=carry;
+    for(;d<=len;d+=STEP_GAP){
+      const side=k%2?-1:1;  // 1 = left foot (offset to the walker's left), -1 = right foot
+      out.push({x:A.x+ux*d+uy*STEP_SIDE*side,y:A.y+uy*d-ux*STEP_SIDE*side,a,side});
+      k++;
+    }
+    carry=d-len;  // distance into the next segment where the next step lands
+  }
+  return out;
+}
+function walkProgress(){if(!S.walk)return 0;if(reduced)return 1;return Math.min(1,(performance.now()-S.walk.t0)/S.walk.dur)}
+function walkStatus(){const p=walkProgress();return p>=1?'הכוח הגיע ליעד':`בתנועה… ${Math.round(p*100)}%`}
+function drawWalk(){
+  const g=document.getElementById('walk');if(!g)return;
+  if(!S.walk||S.step!==5){g.innerHTML='';return}
+  const steps=S.walk.steps,p=walkProgress(),n=Math.max(1,Math.ceil(p*steps.length));
+  let h='';
+  for(let k=0;k<n;k++){
+    const s=steps[k],op=Math.max(.3,1-(n-1-k)*.08);
+    h+=`<use href="#foot" transform="translate(${s.x.toFixed(1)},${s.y.toFixed(1)}) rotate(${s.a.toFixed(0)}) scale(${s.side*FOOT_SCALE},${FOOT_SCALE})" opacity="${op.toFixed(2)}"/>`;
+  }
+  g.innerHTML=h;
+  const st=walkStatus(),note=document.getElementById('walknote');
+  if(note)note.textContent=st;
+  document.getElementById('mapnote').textContent=`${S.routes[S.chosen].len} מ׳ · ${rName(S.chosen)} · ${st}`;
+}
+function startWalk(){
+  const r=S.routes[S.chosen];
+  cancelAnimationFrame(S.raf);
+  // one second per minute of estimated movement, clamped to 4–12 s
+  S.walk={t0:performance.now(),dur:Math.min(12,Math.max(4,r.time))*1000,steps:walkSteps(r,S.chosen)};
+  if(reduced)return;
+  const loop=()=>{drawWalk();if(walkProgress()<1)S.raf=requestAnimationFrame(loop)};
+  S.raf=requestAnimationFrame(loop);
+}
+function stopWalk(){cancelAnimationFrame(S.raf);S.walk=null}
 function airDist(){const a=nodes[S.start],b=nodes[S.target];return Math.round(Math.hypot(a.x-b.x,a.y-b.y)*MPX)}
 
 /* ===================== PANEL ===================== */
@@ -651,6 +706,11 @@ function step5(){
     <h2>שלב 5 · משוב שטח בלחיצה אחת</h2>
     <p class="lead">${rName(S.chosen)} נבחרה תוך ${S.decisionSec} שניות. בסיום כל מקטע – לחיצה אחת מעדכנת את תמונת המצב.</p>
   </div>
+  <div class="sim">
+    <svg class="footlogo" viewBox="-8 -9 16 18" aria-hidden="true"><g transform="translate(-3.2,2.5)">${FOOT}</g><g transform="translate(3.2,-2.5) scale(-1,1)">${FOOT}</g></svg>
+    <div class="grow"><b>סימולציית תנועה</b><div class="small muted" id="walknote" aria-live="polite">${walkStatus()}</div></div>
+    <button class="btn" data-act="replay">▶ הפעל שוב</button>
+  </div>
   ${!S.trustAsked?`<div class="trust"><span>הנימוקים של TIES היו מובנים ומספקים להחלטה?</span><button class="btn" data-act="trust" data-v="1">כן</button><button class="btn ghost" data-act="trust" data-v="0">לא</button></div>`:''}
   ${items.map(it=>`<div class="fbitem"><h4><span>${it.title}</span>${last(it.id)?`<span class="tag keep">${FBK[last(it.id)].label}</span>`:''}</h4>
     <div class="fbbtns">${FB.map(f=>`<button class="${f.k} ${last(it.id)===f.k?'on':''}" data-act="fb" data-th="${it.id}" data-v="${f.k}"><span class="ic">${f.ic}</span>${f.label}</button>`).join('')}</div></div>`).join('')}
@@ -778,12 +838,13 @@ document.addEventListener('click',ev=>{
     case 'go2':startIngest();return;
     case 'go3':S.step=3;break;
     case 'approve':S.step=4;S.tPublish=Date.now();S.sel=bestIdx();S.focus=null;toast('קמ״ן אישר – החלופות הופצו לטאבלט המפקד');break;
-    case 'restart':clearInterval(S.timer);Object.assign(S,{step:1,routes:null,chosen:null,focus:null,tPublish:null,trustAsked:false,mode:'start'});break;
+    case 'replay':startWalk();break;
+    case 'restart':clearInterval(S.timer);stopWalk();Object.assign(S,{step:1,routes:null,chosen:null,focus:null,tPublish:null,trustAsked:false,mode:'start'});break;
     case 'sel':S.sel=+v;S.focus=null;break;
     case 'focus':S.focus=S.focus===v?null:v;break;
     case 'choose':
       S.chosen=+v;S.sel=+v;S.decisionSec=Math.max(1,Math.round((Date.now()-S.tPublish)/1000));P.decisions.push(S.decisionSec);
-      S.missionId=Date.now().toString(36);S.step=5;S.fbBase=Date.now();S.focus=null;save();window.scrollTo({top:0,behavior:reduced?'auto':'smooth'});break;
+      S.missionId=Date.now().toString(36);S.step=5;S.fbBase=Date.now();S.focus=null;startWalk();save();window.scrollTo({top:0,behavior:reduced?'auto':'smooth'});break;
     case 'trust':P.trust.n++;if(v==='1')P.trust.yes++;S.trustAsked=true;save();break;
     case 'fb':{const r=addReport(b.dataset.th,v);save();toast(`${FBK[v].label} – נקלט תוך ${r.sec} ש׳ ${P.online?'וסונכרן':'ונשמר בתור (מנותק)'}`);break}
     case 'net':
