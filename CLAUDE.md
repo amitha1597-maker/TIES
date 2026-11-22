@@ -22,6 +22,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ..\serve.ps1 -Port 8765
 
 Then open http://localhost:8765/TIES/index.html. Opening `index.html` directly also works, since there are no fetches.
 
+## Repository and deploy
+
+This folder is its own git repo (the parent folders aren't), pushed to the **public** GitHub repo `amitha1597-maker/TIES` on branch `main`. GitHub Pages serves `main` from the repo root at https://amitha1597-maker.github.io/TIES/, so every push to `main` goes live within a minute or two. Because the repo and site are public, everything committed here must stay mock data. `README.md` is the public Hebrew description: keep it in sync when features change.
+
 ## How `index.html` is organized
 
 - **Data (top of `<script>`) is the source of truth:** `KINDS` (edge type → speed in m/min and exposure factor), the grid built from `COLS`/`ROWS` into `nodes` and `edges` (ids `h{row}{col}` horizontal, `v{row}{col}` vertical; row 0 = courtyards and the jump house `h02`, row 1 = main street, row 2 = southern alley), `windows` (dominant windows on the main street), `THREATS`, `PRIORS` (Beta(a,b) per indicator type), `FEED` (raw items for the ingestion step), `FB` (feedback buttons).
